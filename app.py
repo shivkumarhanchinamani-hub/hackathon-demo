@@ -6,39 +6,47 @@ df = pd.read_csv("hackathon.csv")
 st.set_page_config(layout="wide")
 st.title("Revenue & Churn Early Warning Engine")
 
-# ---------------- DERIVED LOGIC ----------------
+# ---------------- CATEGORY LOGIC ----------------
 
-def churn_risk(row):
+def classify_account(row):
+
+    # 1️⃣ CHURN RISK (Highest Priority)
     if row["Decline Yes / No"] == "YES" and row["Ticket Stress level"] == "High":
-        return "High"
+        return "Churn Risk 🔴"
+
+    # 2️⃣ RENEWAL RISK
+    elif row["Renewal"] == "YES":
+        return "Renewal Risk ⏳"
+
+    # 3️⃣ USAGE DECLINE
     elif row["Decline Yes / No"] == "YES":
-        return "Medium"
-    else:
-        return "Low"
+        return "Usage Decline 📉"
 
-def usage_risk(row):
-    if row["Decline Yes / No"] == "YES":
-        return "High"
-    elif row["Decline Yes / No"] == "Needs Review":
-        return "Review"
-    else:
-        return "Low"
+    # 4️⃣ NEEDS EXTRA CARE (Support Stress)
+    elif row["Ticket Stress level"] == "High":
+        return "Needs Extra Care 🔧"
 
-def growth_opportunity(row):
-    if row["Decline Yes / No"] == "NO" and row["ARR"] > 50000:
-        return "High"
-    elif row["Decline Yes / No"] == "NO":
-        return "Medium"
-    else:
-        return "Low"
+    # 5️⃣ GROWTH OPPORTUNITY
+    elif row["Decline Yes / No"] == "NO" and row["ARR"] > 50000:
+        return "Growth Opportunity 🚀"
 
-df["Churn Risk"] = df.apply(churn_risk, axis=1)
-df["Usage Risk"] = df.apply(usage_risk, axis=1)
-df["Growth Opportunity"] = df.apply(growth_opportunity, axis=1)
+    # 6️⃣ LOW ENGAGEMENT RISK
+    elif row["Decline Yes / No"] == "NO" and row["Usage Jan"] <= 2.5:
+        return "Low Engagement Risk 🟡"
+
+    # 7️⃣ STABLE ACCOUNTS (Default)
+    else:
+        return "Stable Accounts ✅"
+
+
+df["Portfolio Category"] = df.apply(classify_account, axis=1)
+
+# ---------------- REVENUE AT RISK ----------------
 
 df["Revenue at Risk"] = df.apply(
-    lambda row: row["ARR"] * 0.6 if row["Churn Risk"] == "High"
-    else row["ARR"] * 0.3 if row["Churn Risk"] == "Medium"
+    lambda row: row["ARR"] * 0.6 if "Churn Risk" in row["Portfolio Category"]
+    else row["ARR"] * 0.3 if "Usage Decline" in row["Portfolio Category"]
+    else row["ARR"] * 0.2 if "Renewal Risk" in row["Portfolio Category"]
     else row["ARR"] * 0.1,
     axis=1
 )
@@ -47,45 +55,29 @@ df["Revenue at Risk"] = df.apply(
 
 total_arr = df["ARR"].sum()
 revenue_risk = df["Revenue at Risk"].sum()
-high_churn = (df["Churn Risk"] == "High").sum()
-growth_accounts = (df["Growth Opportunity"] == "High").sum()
+churn_accounts = (df["Portfolio Category"] == "Churn Risk 🔴").sum()
+growth_accounts = (df["Portfolio Category"] == "Growth Opportunity 🚀").sum()
 
 col1, col2, col3, col4 = st.columns(4)
 
 col1.metric("Total Portfolio ARR", f"${total_arr:,.0f}")
 col2.metric("Revenue at Risk", f"${revenue_risk:,.0f}")
-col3.metric("High Churn Risk", high_churn)
+col3.metric("Churn Risk Accounts", churn_accounts)
 col4.metric("Growth Opportunities", growth_accounts)
 
 st.divider()
 
-# ---------------- FILTERS ----------------
+# ---------------- SINGLE INTELLIGENCE FILTER ----------------
 
-st.sidebar.header("Filters")
-
-churn_filter = st.sidebar.multiselect(
-    "Churn Risk",
-    df["Churn Risk"].unique(),
-    default=df["Churn Risk"].unique()
+category = st.sidebar.selectbox(
+    "Portfolio Intelligence Lens",
+    ["All"] + list(df["Portfolio Category"].unique())
 )
 
-growth_filter = st.sidebar.multiselect(
-    "Growth Opportunity",
-    df["Growth Opportunity"].unique(),
-    default=df["Growth Opportunity"].unique()
-)
-
-usage_filter = st.sidebar.multiselect(
-    "Usage Risk",
-    df["Usage Risk"].unique(),
-    default=df["Usage Risk"].unique()
-)
-
-filtered_df = df[
-    (df["Churn Risk"].isin(churn_filter)) &
-    (df["Growth Opportunity"].isin(growth_filter)) &
-    (df["Usage Risk"].isin(usage_filter))
-]
+if category == "All":
+    filtered_df = df
+else:
+    filtered_df = df[df["Portfolio Category"] == category]
 
 # ---------------- TABLE VIEW ----------------
 
@@ -96,36 +88,39 @@ st.divider()
 
 # ---------------- ACCOUNT INTELLIGENCE ----------------
 
-st.subheader("Account Intelligence")
+if len(filtered_df) > 0:
 
-account = st.selectbox("Select Account", filtered_df["Accounts"])
+    account = st.selectbox("Select Account", filtered_df["Accounts"])
+    acc_data = df[df["Accounts"] == account].iloc[0]
 
-acc_data = df[df["Accounts"] == account].iloc[0]
+    col1, col2, col3 = st.columns(3)
 
-col1, col2, col3, col4 = st.columns(4)
+    col1.metric("ARR", f"${acc_data['ARR']:,.0f}")
+    col2.metric("Category", acc_data["Portfolio Category"])
+    col3.metric("Revenue at Risk", f"${acc_data['Revenue at Risk']:,.0f}")
 
-col1.metric("ARR", f"${acc_data['ARR']:,.0f}")
-col2.metric("Churn Risk", acc_data["Churn Risk"])
-col3.metric("Usage Risk", acc_data["Usage Risk"])
-col4.metric("Growth Opportunity", acc_data["Growth Opportunity"])
+    st.write("### Recommended Action")
 
-st.write("### Revenue Impact")
+    if "Churn Risk" in acc_data["Portfolio Category"]:
+        st.error("🔥 Exec Alignment + Recovery Plan")
 
-st.metric("Revenue at Risk", f"${acc_data['Revenue at Risk']:,.0f}")
+    elif "Usage Decline" in acc_data["Portfolio Category"]:
+        st.warning("Usage Recovery Intervention")
 
-st.write("### Recommended Action")
+    elif "Needs Extra Care" in acc_data["Portfolio Category"]:
+        st.warning("Technical / Support Stabilization")
 
-if acc_data["Churn Risk"] == "High":
-    st.error("🔥 Exec Alignment + Recovery Plan")
+    elif "Renewal Risk" in acc_data["Portfolio Category"]:
+        st.warning("Renewal Engagement Strategy")
 
-elif acc_data["Usage Risk"] == "High":
-    st.warning("Usage Recovery Intervention")
+    elif "Growth Opportunity" in acc_data["Portfolio Category"]:
+        st.success("🚀 Expansion / Upsell Play")
 
-elif acc_data["Ticket Stress level"] == "High":
-    st.warning("Technical Health Review")
+    elif "Low Engagement Risk" in acc_data["Portfolio Category"]:
+        st.warning("Proactive Engagement Recommended")
 
-elif acc_data["Growth Opportunity"] == "High":
-    st.success("🚀 Expansion / Upsell Play")
+    else:
+        st.info("Monitor")
 
 else:
-    st.info("Monitor")
+    st.warning("No accounts match selected category")
