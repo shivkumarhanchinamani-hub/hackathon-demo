@@ -3,6 +3,11 @@ import pandas as pd
 
 df = pd.read_csv("hackathon.csv")
 
+# ✅ CLEAN USAGE COLUMNS (Prevents Type Errors)
+df["Usage Nov"] = pd.to_numeric(df["Usage Nov"], errors="coerce")
+df["Usage Dec"] = pd.to_numeric(df["Usage Dec"], errors="coerce")
+df["Usage Jan"] = pd.to_numeric(df["Usage Jan"], errors="coerce")
+
 st.set_page_config(layout="wide")
 st.title("Revenue & Churn Early Warning Engine")
 
@@ -22,7 +27,7 @@ def classify_account(row):
     elif row["Decline Yes / No"] == "YES":
         return "Usage Decline 📉"
 
-    # 4️⃣ NEEDS EXTRA CARE (Support Stress)
+    # 4️⃣ NEEDS EXTRA CARE
     elif row["Ticket Stress level"] == "High":
         return "Needs Extra Care 🔧"
 
@@ -30,11 +35,15 @@ def classify_account(row):
     elif row["Decline Yes / No"] == "NO" and row["ARR"] > 50000:
         return "Growth Opportunity 🚀"
 
-    # 6️⃣ LOW ENGAGEMENT RISK
-    elif row["Decline Yes / No"] == "NO" and row["Usage Jan"] <= 2.5:
+    # 6️⃣ LOW ENGAGEMENT RISK (Safe evaluation)
+    elif (
+        row["Decline Yes / No"] == "NO"
+        and pd.notna(row["Usage Jan"])
+        and row["Usage Jan"] <= 2.5
+    ):
         return "Low Engagement Risk 🟡"
 
-    # 7️⃣ STABLE ACCOUNTS (Default)
+    # 7️⃣ STABLE ACCOUNTS
     else:
         return "Stable Accounts ✅"
 
@@ -67,7 +76,7 @@ col4.metric("Growth Opportunities", growth_accounts)
 
 st.divider()
 
-# ---------------- SINGLE INTELLIGENCE FILTER ----------------
+# ---------------- SINGLE FILTER ----------------
 
 category = st.sidebar.selectbox(
     "Portfolio Intelligence Lens",
@@ -86,7 +95,7 @@ st.dataframe(filtered_df, use_container_width=True)
 
 st.divider()
 
-# ---------------- ACCOUNT INTELLIGENCE ----------------
+# ---------------- ACCOUNT VIEW ----------------
 
 if len(filtered_df) > 0:
 
